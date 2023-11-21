@@ -24,17 +24,24 @@ android {
     compileSdk 33
     defaultConfig {
         applicationId 'com.example.android.fido2'
-        minSdk 21
+        minSdk 33
         targetSdk 33
         versionCode 1
         versionName '1.0'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
         vectorDrawables.useSupportLibrary = true
-        buildConfigField 'String', 'API_BASE_URL', "\"https://webauthn-codelab.glitch.me/auth\""
-        resValue 'string', 'host', 'https://webauthn-codelab.glitch.me'
+//        buildConfigField 'String', 'API_BASE_URL', "\"https://webauthn-codelab.glitch.me/auth\""
+//        resValue 'string', 'host', 'https://webauthn-codelab.glitch.me'
+//        resValue 'string', 'asset_statements', """
+//           [{
+//             "include": "https://webauthn-codelab.glitch.me/.well-known/assetlinks.json"
+//           }]
+//        """
+        buildConfigField 'String', 'API_BASE_URL', "\"https://citrine-grand-ankle.glitch.me/auth\""
+        resValue 'string', 'host', 'https://citrine-grand-ankle.glitch.me'
         resValue 'string', 'asset_statements', """
            [{
-             "include": "https://webauthn-codelab.glitch.me/.well-known/assetlinks.json"
+             "include": "https://citrine-grand-ankle.glitch.me/.well-known/assetlinks.json"
            }]
         """
     }
@@ -78,6 +85,7 @@ dependencies {
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
 
     implementation "androidx.datastore:datastore-preferences:1.0.0"
+    implementation 'com.google.android.gms:play-services-location:21.0.1'
 
     def coroutine_version = '1.7.1'
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutine_version"

@@ -27,6 +27,7 @@ import com.example.android.fido2.api.ApiException
 import com.example.android.fido2.api.ApiResult
 import com.example.android.fido2.api.AuthApi
 import com.example.android.fido2.api.Credential
+import com.example.android.fido2.toBase64
 import com.google.android.gms.fido.fido2.Fido2ApiClient
 import com.google.android.gms.fido.fido2.api.common.PublicKeyCredential
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +37,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -153,11 +155,6 @@ class AuthRepository @Inject constructor(
         }
     }
 
-    /**
-     * Retrieves the list of credential this user has registered on the server. This should be
-     * called only when the sign-in state is [SignInState.SignedIn].
-     */
-
     private suspend fun refreshCredentials() {
         val sessionId = dataStore.read(SESSION_ID)!!
         when (val result = api.getKeys(sessionId)) {
@@ -215,7 +212,7 @@ class AuthRepository @Inject constructor(
             prefs.remove(SESSION_ID)
             prefs.remove(CREDENTIALS)
         }
-        signInStateMutable.emit(SignInState.SignInError("Signed out from server."))
+        signInStateMutable.emit(SignInState.SignInError("Signed out by server"))
     }
 
     /**
@@ -226,15 +223,18 @@ class AuthRepository @Inject constructor(
         fido2ApiClient?.let { client ->
             try {
                 val sessionId = dataStore.read(SESSION_ID)!!
-
-                // TODO(1): Call the server API: /registerRequest
-                // - Use api.registerRequest to get an ApiResult of
-                //   PublicKeyCredentialCreationOptions.
-                // - Call fido2ApiClient.getRegisterIntent to create a PendingIntent to generate a
-                //   new credential. This method returns a Task object.
-                // - Call await() on the Task and return the result so that the UI can open the
-                //   fingerprint dialog.
-
+                when (val apiResult = api.registerRequest(sessionId)) {
+                    ApiResult.SignedOutFromServer -> forceSignOut()
+                    is ApiResult.Success -> {
+                        if (apiResult.sessionId != null) {
+                            dataStore.edit { prefs ->
+                                prefs[SESSION_ID] = apiResult.sessionId
+                            }
+                        }
+                        val task = client.getRegisterPendingIntent(apiResult.data)
+                        return task.await()
+                    }
+                }
             } catch (e: Exception) {
                 Log.e(TAG, "Cannot call registerRequest", e)
             }
@@ -249,14 +249,17 @@ class AuthRepository @Inject constructor(
     suspend fun registerResponse(credential: PublicKeyCredential) {
         try {
             val sessionId = dataStore.read(SESSION_ID)!!
-
-            // TODO(4): Call the server API: /registerResponse
-            // - Use api.registerResponse to send the response back to the server.
-            // - Save the returned list of credentials into the DataStore. The key is CREDENTIALS.
-            // - Also save the newly added credential ID into the DataStore. The key is
-            //   LOCAL_CREDENTIAL_ID. The ID can be obtained from the `rawId` field of
-            //   the PublicKeyCredential object.
-
+            val credentialId = credential.rawId.toBase64()
+            when (val result = api.registerResponse(sessionId, credential)) {
+                ApiResult.SignedOutFromServer -> forceSignOut()
+                is ApiResult.Success -> {
+                    dataStore.edit { prefs ->
+                        result.sessionId?.let { prefs[SESSION_ID] = it }
+                        prefs[CREDENTIALS] = result.data.toStringSet()
+                        prefs[LOCAL_CREDENTIAL_ID] = credentialId
+                    }
+                }
+            }
         } catch (e: ApiException) {
             Log.e(TAG, "Cannot call registerResponse", e)
         }
@@ -285,14 +288,15 @@ class AuthRepository @Inject constructor(
         fido2ApiClient?.let { client ->
             val sessionId = dataStore.read(SESSION_ID)!!
             val credentialId = dataStore.read(LOCAL_CREDENTIAL_ID)
-
-            // TODO(5): Call the server API: /signinRequest
-            // - Use api.signinRequest to get a PublicKeyCredentialRequestOptions.
-            // - Call fido2ApiClient.getSignIntent to create a PendingIntent to assert the
-            //   credential. This method returns a Task object.
-            // - Call await() on the Task and return the result so that the UI can open the
-            //   fingerprint dialog.
-
+            if (credentialId != null) {
+                when (val apiResult = api.signinRequest(sessionId, credentialId)) {
+                    ApiResult.SignedOutFromServer -> forceSignOut()
+                    is ApiResult.Success -> {
+                        val task = client.getSignPendingIntent(apiResult.data)
+                        return task.await()
+                    }
+                }
+            }
         }
         return null
     }
@@ -305,20 +309,21 @@ class AuthRepository @Inject constructor(
         try {
             val username = dataStore.read(USERNAME)!!
             val sessionId = dataStore.read(SESSION_ID)!!
-
-            // TODO(8): Call the server API: /signinResponse
-            // - Use api.signinResponse to send the response back to the server.
-            // - Save the returned list of credentials into the DataStore. The key is CREDENTIALS.
-            // - Also save the credential ID into the DataStore. The key is LOCAL_CREDENTIAL_ID. The
-            //   ID can be obtained from the `rawId` field of the PublicKeyCredential object.
-            // - Notify the UI that the sign-in has succeeded. This can be done by calling
-            //   `signInStateMutable.emit(SignInState.SignedIn(username))`.
-            // - Call refreshCredentials to fetch the user's credentials so they can be listed in
-            //   the UI.
-
+            val credentialId = credential.rawId.toBase64()
+            when (val result = api.signinResponse(sessionId, credential)) {
+                ApiResult.SignedOutFromServer -> forceSignOut()
+                is ApiResult.Success -> {
+                    dataStore.edit { prefs ->
+                        result.sessionId?.let { prefs[SESSION_ID] = it }
+                        prefs[CREDENTIALS] = result.data.toStringSet()
+                        prefs[LOCAL_CREDENTIAL_ID] = credentialId
+                    }
+                    signInStateMutable.emit(SignInState.SignedIn(username))
+                    refreshCredentials()
+                }
+            }
         } catch (e: ApiException) {
             Log.e(TAG, "Cannot call registerResponse", e)
         }
     }
-
 }

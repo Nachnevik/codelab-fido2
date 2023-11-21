@@ -16,6 +16,7 @@
 
 package com.example.android.fido2.ui
 
+//import AuthRepository
 import androidx.lifecycle.ViewModel
 import com.example.android.fido2.repository.AuthRepository
 import com.google.android.gms.fido.fido2.Fido2ApiClient
@@ -24,7 +25,7 @@ import javax.inject.Inject
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
-    private val repository: AuthRepository
+    private val repository: AuthRepository,
 ) : ViewModel() {
 
     val signInState = repository.signInState
